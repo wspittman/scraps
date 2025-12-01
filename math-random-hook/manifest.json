@@ -1,0 +1,9 @@
+{
+  "name": "CC Overrides",
+  "version": "1.0",
+  "manifest_version": 3,
+  "description": "Cookie Clicker overrides in the page's MAIN world",
+  "permissions": ["scripting", "tabs"],
+  "host_permissions": ["https://orteil.dashnet.org/cookieclicker/"],
+  "background": { "service_worker": "sw.js" }
+}
