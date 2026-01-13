@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "4 16-23,0-5 * * *"
   workflow_dispatch:
+    inputs:
+      cooldown_days:
+        description: "Days to cooldown after a hit"
+        required: false
+        default: "21"
+      look_back_days:
+        description: "Days to look back for posts"
+        required: false
+        default: "1"
 
 permissions:
   contents: write
@@ -28,6 +37,9 @@ jobs:
           node-version: "24.x"
 
       - name: Check (fails if new post)
+        env:
+          COOLDOWN_DAYS: ${{ inputs.cooldown_days }}
+          LOOK_BACK_DAYS: ${{ inputs.look_back_days }}
         run: node check_hn_ask_working_on.mjs
 
       - name: Commit updated state (even if check failed)

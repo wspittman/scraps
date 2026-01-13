@@ -9,10 +9,15 @@ const STATE_FILE = path.resolve("hn_ask_working_on_state.json");
 const EMPTY_STATE = { lastId: null, lastHitAt: null };
 
 // Time
-const COOLDOWN_DAYS = 21;
 const SEC_PER_DAY = 24 * 60 * 60;
+const COOLDOWN_DAYS = parseInt(process.env.COOLDOWN_DAYS || "21", 10);
 const COOLDOWN_MS = COOLDOWN_DAYS * SEC_PER_DAY * 1000;
-const ONE_DAY_SEC = Math.floor(Date.now() / 1000 - 1 * SEC_PER_DAY);
+
+// Default look back 1 day
+const LOOK_BACK_DAYS = parseInt(process.env.LOOK_BACK_DAYS || "1", 10);
+const SEARCH_AFTER_TS = Math.floor(
+  Date.now() / 1000 - LOOK_BACK_DAYS * SEC_PER_DAY
+);
 
 // Search
 const AUTHOR = "david927";
@@ -24,7 +29,7 @@ const ALGOLIA_URL =
     tags: `story,ask_hn,author_${AUTHOR}`,
     query: "what are you working on",
     hitsPerPage: "1",
-    numericFilters: "created_at_i>" + ONE_DAY_SEC,
+    numericFilters: "created_at_i>" + SEARCH_AFTER_TS,
     // Ask Algolia to search only in title if supported by this index.
     restrictSearchableAttributes: "title",
   }).toString();
