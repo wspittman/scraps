@@ -1,0 +1,44 @@
+name: Ask HN What are you working on alert (fail-to-email)
+
+on:
+  schedule:
+    - cron: "4 16-23,0-5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hn-ask-working-on
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Latest commit only
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+
+      - name: Check (fails if new post)
+        run: node check-hn-ask-working-on.mjs
+
+      - name: Commit updated state (even if check failed)
+        if: ${{ always() }}
+        run: |
+          if git status --porcelain | grep -q "hn_ask_working_on_state.json"; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add hn_ask_working_on_state.json
+            git commit -m "Update HN Ask Working On state"
+            git push
+          else
+            echo "No state changes."
+          fi
