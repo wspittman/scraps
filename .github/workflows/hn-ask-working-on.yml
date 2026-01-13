@@ -28,7 +28,7 @@ jobs:
           node-version: "24.x"
 
       - name: Check (fails if new post)
-        run: node check-hn-ask-working-on.mjs
+        run: node check_hn_ask_working_on.mjs
 
       - name: Commit updated state (even if check failed)
         if: ${{ always() }}
