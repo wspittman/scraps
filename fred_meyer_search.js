@@ -25,8 +25,8 @@ const fmData = JSON.parse(fs.readFileSync(dataPath, "utf8"));
 // Helper to extract price as number from storePrices object
 function extractPriceObj(obj) {
   return {
-    price: parseFloat(obj.price.slice(4)) || null,
-    unitPrice: parseFloat(obj.equivalizedUnitPrice?.amount) || null,
+    price: parseFloat(obj?.price.slice(4)) || null,
+    unitPrice: parseFloat(obj?.equivalizedUnitPrice?.amount) || null,
   };
 }
 
