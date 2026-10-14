@@ -5,10 +5,9 @@ import { estimateTaxMFJ } from "./tax_estimator.ts";
 const zeroInputs = {
   ordinaryIncomeK: 0,
   longTermCapitalGainsK: 0,
-  dividendsK: 0,
+  ordinaryInvestmentIncomeK: 0,
   charitableCashK: 0,
   saltPaidK: 0,
-  investmentInterestK: 0,
   shortTermCapitalGainsK: 0,
 };
 
@@ -26,14 +25,14 @@ suite("2025 MFJ estimator", () => {
   });
 
   [
-    { name: "interest", interest: 50, shortTerm: 0 },
-    { name: "short-term gain", interest: 0, shortTerm: 50 },
-  ].forEach(({ name, interest, shortTerm }) => {
+    { name: "combined interest and dividends", investmentIncome: 50, shortTerm: 0 },
+    { name: "short-term gain", investmentIncome: 0, shortTerm: 50 },
+  ].forEach(({ name, investmentIncome, shortTerm }) => {
     test(`${name} is included in ordinary tax and NIIT`, () => {
       const result = estimateTaxMFJ({
         ...zeroInputs,
         ordinaryIncomeK: 250,
-        investmentInterestK: interest,
+        ordinaryInvestmentIncomeK: investmentIncome,
         shortTermCapitalGainsK: shortTerm,
       });
       assert.equal(result.agi, 300_000);
@@ -97,7 +96,7 @@ suite("2025 MFJ estimator", () => {
         ...zeroInputs,
         ordinaryIncomeK: 300,
         longTermCapitalGainsK: -30,
-        investmentInterestK: 10,
+        ordinaryInvestmentIncomeK: 10,
       }).niitTax,
       266,
     );
@@ -119,10 +118,9 @@ suite("2025 MFJ estimator", () => {
     const result = estimateTaxMFJ({
       ordinaryIncomeK: 123,
       longTermCapitalGainsK: 123,
-      dividendsK: 12,
+      ordinaryInvestmentIncomeK: 12,
       charitableCashK: 12,
       saltPaidK: 12,
-      investmentInterestK: 0,
       shortTermCapitalGainsK: 0,
     });
     assert.equal(result.taxYear, 2025);
@@ -131,11 +129,7 @@ suite("2025 MFJ estimator", () => {
 
   [NaN, Infinity, -Infinity, Number.MAX_VALUE].forEach((invalid) => {
     test(`rejects invalid input ${invalid} in every field`, () => {
-      for (const field of [
-        ...Object.keys(zeroInputs),
-        "investmentInterestK",
-        "shortTermCapitalGainsK",
-      ]) {
+      for (const field of Object.keys(zeroInputs)) {
         assert.throws(
           () => estimateTaxMFJ({ ...zeroInputs, [field]: invalid }),
           RangeError,
@@ -147,10 +141,9 @@ suite("2025 MFJ estimator", () => {
   test("rejects negative non-capital inputs", () => {
     for (const field of [
       "ordinaryIncomeK",
-      "dividendsK",
+      "ordinaryInvestmentIncomeK",
       "charitableCashK",
       "saltPaidK",
-      "investmentInterestK",
     ]) {
       assert.throws(
         () => estimateTaxMFJ({ ...zeroInputs, [field]: -1 }),

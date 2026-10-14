@@ -14,10 +14,10 @@
 export interface TaxInputsMFJ {
   /** Non-investment ordinary income, excluding interest, dividends and capital gains. */
   ordinaryIncomeK: number;
+  /** Taxable investment interest plus dividends, all treated as ordinary income (no qualified-dividend handling). */
+  ordinaryInvestmentIncomeK: number;
   /** Net long-term investment capital gains/losses, including applicable carryovers. */
   longTermCapitalGainsK: number;
-  /** Dividends, all treated as ordinary income. */
-  dividendsK: number;
   /** Cash contributions only (simple 60% of AGI cap) */
   charitableCashK: number;
   /**
@@ -25,8 +25,6 @@ export interface TaxInputsMFJ {
    * - For sales tax, there is no flat "standard" amount. Use IRS optional tables/calculator if you do not track receipts.
    */
   saltPaidK: number;
-  /** Taxable investment interest; defaults to zero. */
-  investmentInterestK: number;
   /** Net short-term investment capital gains/losses; defaults to zero. */
   shortTermCapitalGainsK: number;
 }
@@ -34,11 +32,10 @@ export interface TaxInputsMFJ {
 // Edit these values to compare estimates. All amounts are in thousands of dollars.
 const taxInputsMFJ: TaxInputsMFJ = {
   ordinaryIncomeK: 123,
+  ordinaryInvestmentIncomeK: 12,
   longTermCapitalGainsK: 123,
-  dividendsK: 12,
   charitableCashK: 12,
   saltPaidK: 12,
-  investmentInterestK: 0,
   shortTermCapitalGainsK: 0,
 };
 
@@ -141,10 +138,9 @@ function childTaxCreditNonrefundable(magi: number) {
 export function estimateTaxMFJ({
   ordinaryIncomeK,
   longTermCapitalGainsK,
-  dividendsK,
+  ordinaryInvestmentIncomeK,
   charitableCashK,
   saltPaidK,
-  investmentInterestK,
   shortTermCapitalGainsK,
 }: TaxInputsMFJ) {
   const ordinaryIncome = dollarsFromK(ordinaryIncomeK, "ordinaryIncomeK");
@@ -153,10 +149,12 @@ export function estimateTaxMFJ({
     "longTermCapitalGainsK",
     true,
   );
-  const dividends = dollarsFromK(dividendsK, "dividendsK");
+  const ordinaryInvestmentIncome = dollarsFromK(
+    ordinaryInvestmentIncomeK,
+    "ordinaryInvestmentIncomeK",
+  );
   const charitableCash = dollarsFromK(charitableCashK, "charitableCashK");
   const saltPaid = dollarsFromK(saltPaidK, "saltPaidK");
-  const interest = dollarsFromK(investmentInterestK, "investmentInterestK");
   const stcg = dollarsFromK(
     shortTermCapitalGainsK,
     "shortTermCapitalGainsK",
@@ -171,8 +169,7 @@ export function estimateTaxMFJ({
   const capitalLossDeduction = Math.min(3_000, clamp0(-netCapital));
   const ordinaryPart =
     ordinaryIncome +
-    interest +
-    dividends +
+    ordinaryInvestmentIncome +
     shortTermGain -
     capitalLossDeduction;
   const agi = ordinaryPart + longTermGain;
@@ -205,7 +202,7 @@ export function estimateTaxMFJ({
   // Only the deductible portion of a net capital loss reduces this year's NII.
   // Investment expenses and other NIIT adjustments remain outside this model.
   const nii = clamp0(
-    interest + dividends + positiveCapital - capitalLossDeduction,
+    ordinaryInvestmentIncome + positiveCapital - capitalLossDeduction,
   );
   const niitBase = Math.min(nii, clamp0(magi - NIIT_THRESHOLD));
   const niitTax = niitBase * NIIT_RATE;
