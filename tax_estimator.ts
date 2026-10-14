@@ -1,13 +1,5 @@
 /*
-  Dead simple non-trustworthy ballpark US federal income tax estimator for Married Filing Jointly (MFJ) status.
-
-  Inputs:
-  - ordinaryIncomeK: wages, interest, short-term gains, etc (excluding dividends)
-  - ltcgK: long-term capital gains (net)
-  - dividendsK: ALL treated as ordinary dividends (no qualified dividend handling)
-  - charitableCashK: cash contributions only (simple 60% of AGI cap)
-  - saltPaidK: SALT actually paid (in WA typically property tax + estimated sales tax)
-    - For sales tax, there is no flat "standard" amount. Use IRS optional tables/calculator if you do not track receipts.
+  Ballpark US federal income tax estimator for tax year 2025 only, Married Filing Jointly (MFJ).
 
   Includes:
   - Ordinary tax brackets
@@ -18,7 +10,41 @@
   Ignores: AMT, payroll/SE taxes, refundable credits, QBI, most phaseouts, state tax, etc.
 */
 
-// ===== UPDATE THESE ONCE PER YEAR (MFJ only) =====
+/** Tax inputs, in thousands of dollars. */
+export interface TaxInputsMFJ {
+  /** Non-investment ordinary income, excluding interest, dividends and capital gains. */
+  ordinaryIncomeK: number;
+  /** Net long-term investment capital gains/losses, including applicable carryovers. */
+  longTermCapitalGainsK: number;
+  /** Dividends, all treated as ordinary income. */
+  dividendsK: number;
+  /** Cash contributions only (simple 60% of AGI cap) */
+  charitableCashK: number;
+  /**
+   * SALT actually paid (in WA typically property tax + estimated sales tax)
+   * - For sales tax, there is no flat "standard" amount. Use IRS optional tables/calculator if you do not track receipts.
+   */
+  saltPaidK: number;
+  /** Taxable investment interest; defaults to zero. */
+  investmentInterestK: number;
+  /** Net short-term investment capital gains/losses; defaults to zero. */
+  shortTermCapitalGainsK: number;
+}
+
+// Edit these values to compare estimates. All amounts are in thousands of dollars.
+const taxInputsMFJ: TaxInputsMFJ = {
+  ordinaryIncomeK: 123,
+  longTermCapitalGainsK: 123,
+  dividendsK: 12,
+  charitableCashK: 12,
+  saltPaidK: 12,
+  investmentInterestK: 0,
+  shortTermCapitalGainsK: 0,
+};
+
+// #region TAX YEAR 2025 (MFJ only); later years also require reviewing calculation rules
+
+const TAX_YEAR = 2025;
 const STD_DED = 31_500;
 
 const ORD_BRACKETS = [
@@ -35,7 +61,7 @@ const ORD_BRACKETS = [
 const CG_ZERO = 96_700;
 const CG_FIFTEEN = 600_050;
 
-// SALT cap (2025+ law): base cap, phase-down above MAGI, floor cap
+// SALT cap for 2025: base cap, phase-down above MAGI, floor cap
 const SALT_BASE_CAP = 40_000;
 const SALT_FLOOR_CAP = 10_000;
 const SALT_PHASEOUT_START_MAGI = 500_000;
@@ -53,14 +79,23 @@ const NIIT_RATE = 0.038;
 
 // Charitable cash cap (simplified)
 const CHARITABLE_CASH_AGI_CAP = 0.6;
-// ================================================
+
+// #endregion
 
 function clamp0(n: number) {
-  return Number.isFinite(n) ? Math.max(0, n) : 0;
+  return Math.max(0, n);
 }
 
-function dollarsFromK(k: number) {
-  return clamp0(k) * 1000;
+function dollarsFromK(k: number, name: string, allowNegative = false) {
+  if (!Number.isFinite(k) || Math.abs(k * 1000) > Number.MAX_SAFE_INTEGER) {
+    throw new RangeError(
+      `${name} must be finite and within the supported dollar range`,
+    );
+  }
+  if (!allowNegative && k < 0) {
+    throw new RangeError(`${name} must be nonnegative`);
+  }
+  return k * 1000;
 }
 
 function taxFromBrackets(
@@ -98,31 +133,54 @@ function childTaxCreditNonrefundable(magi: number) {
 
 /**
  * MFJ federal tax (simple):
- * - ordinary tax on (ordinary + dividends) after deductions
+ * - ordinary tax on non-investment income, interest, dividends and net short-term gains
  * - LTCG stacking bands on top of taxable ordinary
- * - NIIT (simplified) on (dividends + LTCG) above MAGI threshold
+ * - NIIT (simplified) on investment income above MAGI threshold
  * - child tax credit (nonrefundable only), assuming 3 qualifying children
  */
-function estimateTaxMFJ(
-  ordinaryIncomeK: number,
-  ltcgK: number,
-  dividendsK: number,
-  charitableCashK: number,
-  saltPaidK: number,
-) {
-  const ordinaryIncome = dollarsFromK(ordinaryIncomeK);
-  const ltcg = dollarsFromK(ltcgK);
-  const dividends = dollarsFromK(dividendsK);
-  const charitableCash = dollarsFromK(charitableCashK);
-  const saltPaid = dollarsFromK(saltPaidK);
+export function estimateTaxMFJ({
+  ordinaryIncomeK,
+  longTermCapitalGainsK,
+  dividendsK,
+  charitableCashK,
+  saltPaidK,
+  investmentInterestK,
+  shortTermCapitalGainsK,
+}: TaxInputsMFJ) {
+  const ordinaryIncome = dollarsFromK(ordinaryIncomeK, "ordinaryIncomeK");
+  const ltcg = dollarsFromK(
+    longTermCapitalGainsK,
+    "longTermCapitalGainsK",
+    true,
+  );
+  const dividends = dollarsFromK(dividendsK, "dividendsK");
+  const charitableCash = dollarsFromK(charitableCashK, "charitableCashK");
+  const saltPaid = dollarsFromK(saltPaidK, "saltPaidK");
+  const interest = dollarsFromK(investmentInterestK, "investmentInterestK");
+  const stcg = dollarsFromK(
+    shortTermCapitalGainsK,
+    "shortTermCapitalGainsK",
+    true,
+  );
 
-  const ordinaryPart = ordinaryIncome + dividends;
-  const agi = ordinaryPart + ltcg;
+  // Opposite-sign capital amounts offset each other before applying tax rates.
+  const netCapital = stcg + ltcg;
+  const positiveCapital = clamp0(netCapital);
+  const longTermGain = Math.min(clamp0(ltcg), positiveCapital);
+  const shortTermGain = positiveCapital - longTermGain;
+  const capitalLossDeduction = Math.min(3_000, clamp0(-netCapital));
+  const ordinaryPart =
+    ordinaryIncome +
+    interest +
+    dividends +
+    shortTermGain -
+    capitalLossDeduction;
+  const agi = ordinaryPart + longTermGain;
   const magi = agi; // simplified
 
   const charitableAllowed = Math.min(
     charitableCash,
-    CHARITABLE_CASH_AGI_CAP * agi,
+    CHARITABLE_CASH_AGI_CAP * clamp0(agi),
   );
   const saltAllowed = Math.min(saltPaid, saltCapMFJ(magi));
   const itemized = charitableAllowed + saltAllowed;
@@ -144,20 +202,24 @@ function estimateTaxMFJ(
   const ltcgTax = 0 * z + 0.15 * f + 0.2 * t;
 
   // NIIT (simplified): min(NII, MAGI - threshold) * 3.8%
-  // Simplified NII = dividends + LTCG. Real NIIT has more nuance.
-  const nii = clamp0(dividends + ltcg);
+  // Only the deductible portion of a net capital loss reduces this year's NII.
+  // Investment expenses and other NIIT adjustments remain outside this model.
+  const nii = clamp0(
+    interest + dividends + positiveCapital - capitalLossDeduction,
+  );
   const niitBase = Math.min(nii, clamp0(magi - NIIT_THRESHOLD));
   const niitTax = niitBase * NIIT_RATE;
 
-  const taxBeforeCredits = ordinaryTax + ltcgTax + niitTax;
+  const taxBeforeCredits = ordinaryTax + ltcgTax;
 
   const ctc = childTaxCreditNonrefundable(magi);
   const ctcUsed = Math.min(taxBeforeCredits, ctc); // nonrefundable only
-  const totalTax = Math.max(0, taxBeforeCredits - ctcUsed);
+  const totalTax = Math.max(0, taxBeforeCredits - ctcUsed) + niitTax;
 
   const round = (n: number) => Math.round(n);
 
   return {
+    taxYear: TAX_YEAR,
     agi: round(agi),
     deductionUsed: round(deductionUsed),
     itemizedUsed: deductionUsed === itemized,
@@ -175,12 +237,7 @@ function estimateTaxMFJ(
   };
 }
 
-const r202x = estimateTaxMFJ(
-  // ordinaryIncomeK, ltcgK, dividendsK, charitableCashK, stateTaxK
-  123,
-  123,
-  12,
-  12,
-  12,
-);
-console.dir(r202x, { depth: null });
+if (import.meta.main) {
+  const r2025 = estimateTaxMFJ(taxInputsMFJ);
+  console.dir(r2025, { depth: null });
+}
