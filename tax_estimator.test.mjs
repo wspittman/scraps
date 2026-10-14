@@ -7,11 +7,47 @@ const zeroInputs = {
   longTermCapitalGainsK: 0,
   ordinaryInvestmentIncomeK: 0,
   charitableCashK: 0,
+  charitableStockK: 0,
   saltPaidK: 0,
   shortTermCapitalGainsK: 0,
 };
 
 suite("2025 MFJ estimator", () => {
+  [
+    { cash: 0, stock: 40, cashAllowed: 0, stockAllowed: 40 },
+    { cash: 0, stock: 80, cashAllowed: 0, stockAllowed: 60 },
+    { cash: 40, stock: 60, cashAllowed: 40, stockAllowed: 60 },
+    { cash: 80, stock: 60, cashAllowed: 80, stockAllowed: 20 },
+    { cash: 100, stock: 60, cashAllowed: 100, stockAllowed: 0 },
+    { cash: 140, stock: 60, cashAllowed: 120, stockAllowed: 0 },
+  ].forEach(({ cash, stock, cashAllowed, stockAllowed }) => {
+    test(`charitable caps at $200k AGI: cash=${cash}k stock=${stock}k`, () => {
+      const result = estimateTaxMFJ({
+        ...zeroInputs,
+        ordinaryIncomeK: 200,
+        charitableCashK: cash,
+        charitableStockK: stock,
+      });
+      assert.equal(result.agi, 200_000);
+      assert.equal(result.charitableCashAllowed, cashAllowed * 1000);
+      assert.equal(result.charitableStockAllowed, stockAllowed * 1000);
+      assert.equal(result.deductionUsed, (cashAllowed + stockAllowed) * 1000);
+    });
+  });
+
+  test("small stock gifts do not displace the standard deduction", () => {
+    const result = estimateTaxMFJ({ ...zeroInputs, ordinaryIncomeK: 200, charitableStockK: 10 });
+    assert.equal(result.charitableStockAllowed, 10_000);
+    assert.equal(result.deductionUsed, 31_500);
+    assert.equal(result.itemizedUsed, false);
+  });
+
+  test("negative AGI leaves no stock deduction", () => {
+    const result = estimateTaxMFJ({ ...zeroInputs, longTermCapitalGainsK: -3, charitableStockK: 10 });
+    assert.equal(result.charitableStockAllowed, 0);
+    assert.equal(result.totalTax, 0);
+  });
+
   test("child credit cannot offset NIIT", () => {
     const result = estimateTaxMFJ({
       ...zeroInputs,
@@ -120,6 +156,7 @@ suite("2025 MFJ estimator", () => {
       longTermCapitalGainsK: 123,
       ordinaryInvestmentIncomeK: 12,
       charitableCashK: 12,
+      charitableStockK: 0,
       saltPaidK: 12,
       shortTermCapitalGainsK: 0,
     });
@@ -143,6 +180,7 @@ suite("2025 MFJ estimator", () => {
       "ordinaryIncomeK",
       "ordinaryInvestmentIncomeK",
       "charitableCashK",
+      "charitableStockK",
       "saltPaidK",
     ]) {
       assert.throws(

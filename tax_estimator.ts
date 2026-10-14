@@ -18,8 +18,16 @@ export interface TaxInputsMFJ {
   ordinaryInvestmentIncomeK: number;
   /** Net long-term investment capital gains/losses, including applicable carryovers. */
   longTermCapitalGainsK: number;
-  /** Cash contributions only (simple 60% of AGI cap) */
+  /** Current-year cash gifts to public charities (60% of AGI cap). */
   charitableCashK: number;
+  /**
+   * Full fair market value of appreciated stock held more than one year and
+   * donated directly to public charities, not just the appreciation (30% AGI cap).
+   * Do not include unrealized gains on donated shares in longTermCapitalGainsK.
+   * Charitable carryovers, private-foundation gifts and cost-basis elections
+   * are outside this model, for both stock and cash contributions.
+   */
+  charitableStockK: number;
   /**
    * SALT actually paid (in WA typically property tax + estimated sales tax)
    * - For sales tax, there is no flat "standard" amount. Use IRS optional tables/calculator if you do not track receipts.
@@ -35,6 +43,7 @@ const taxInputsMFJ: TaxInputsMFJ = {
   ordinaryInvestmentIncomeK: 12,
   longTermCapitalGainsK: 123,
   charitableCashK: 12,
+  charitableStockK: 0,
   saltPaidK: 12,
   shortTermCapitalGainsK: 0,
 };
@@ -74,8 +83,11 @@ const CTC_PHASEOUT_PER_STEP = 50;
 const NIIT_THRESHOLD = 250_000; // MFJ
 const NIIT_RATE = 0.038;
 
-// Charitable cash cap (simplified)
+// Public-charity gifts: IRS Pub. 526 (2025), Worksheet 2.
+// https://www.irs.gov/publications/p526
 const CHARITABLE_CASH_AGI_CAP = 0.6;
+const CHARITABLE_STOCK_AGI_CAP = 0.3;
+const CHARITABLE_STOCK_COMBINED_AGI_CAP = 0.5;
 
 // #endregion
 
@@ -140,6 +152,7 @@ export function estimateTaxMFJ({
   longTermCapitalGainsK,
   ordinaryInvestmentIncomeK,
   charitableCashK,
+  charitableStockK,
   saltPaidK,
   shortTermCapitalGainsK,
 }: TaxInputsMFJ) {
@@ -154,6 +167,7 @@ export function estimateTaxMFJ({
     "ordinaryInvestmentIncomeK",
   );
   const charitableCash = dollarsFromK(charitableCashK, "charitableCashK");
+  const charitableStock = dollarsFromK(charitableStockK, "charitableStockK");
   const saltPaid = dollarsFromK(saltPaidK, "saltPaidK");
   const stcg = dollarsFromK(
     shortTermCapitalGainsK,
@@ -175,10 +189,17 @@ export function estimateTaxMFJ({
   const agi = ordinaryPart + longTermGain;
   const magi = agi; // simplified
 
-  const charitableAllowed = Math.min(
+  const charitableCashAllowed = Math.min(
     charitableCash,
     CHARITABLE_CASH_AGI_CAP * clamp0(agi),
   );
+  // Worksheet 2, lines 26–30: remaining 50% room uses cash gifts before their cap.
+  const charitableStockAllowed = Math.min(
+    charitableStock,
+    CHARITABLE_STOCK_AGI_CAP * clamp0(agi),
+    clamp0(CHARITABLE_STOCK_COMBINED_AGI_CAP * clamp0(agi) - charitableCash),
+  );
+  const charitableAllowed = charitableCashAllowed + charitableStockAllowed;
   const saltAllowed = Math.min(saltPaid, saltCapMFJ(magi));
   const itemized = charitableAllowed + saltAllowed;
   const deductionUsed = Math.max(STD_DED, itemized);
@@ -220,6 +241,9 @@ export function estimateTaxMFJ({
     agi: round(agi),
     deductionUsed: round(deductionUsed),
     itemizedUsed: deductionUsed === itemized,
+    // Available for itemizing, even when the standard deduction wins.
+    charitableCashAllowed: round(charitableCashAllowed),
+    charitableStockAllowed: round(charitableStockAllowed),
 
     taxableOrdinary: round(taxableOrdinary),
     taxableLtcg: round(taxableLtcg),
